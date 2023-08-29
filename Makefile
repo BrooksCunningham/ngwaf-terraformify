@@ -1,7 +1,7 @@
 clean:
 	- rm -r .terraform*
 	- rm *.tf
-	- rm *.tfstate
+	- rm *.tfstate*
 	- rm *.tfstate.backup
 
 run:

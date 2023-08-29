@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 	sigsci "github.com/signalsciences/go-sigsci"
@@ -47,14 +46,15 @@ func main() {
 	set_up_providers(workingDir)
 	set_up_versions(workingDir)
 	set_up_tf_variables(workingDir)
+	set_up_tf_imports(workingDir)
 
 	// https://gobyexample.com/writing-files
-	f, err := os.Create(workingDir + `/ngwaf.tf`)
+	// f, err := os.Create(workingDir + `/ngwaf.tf`)
 	// check(err)
-	defer f.Close()
+	// defer f.Close()
 
 	// iterate over site rules and write a placeholder for a future terraform import
-	add_site_resources(f, allSiteRules.Data)
+	// add_site_resources(f, allSiteRules.Data)
 
 	// perform basic terraform init
 	tf, err := tfexec.NewTerraform(workingDir, execPath)
@@ -71,25 +71,25 @@ func main() {
 	import_site_resources(tf, context.Background(), site, allSiteRules.Data)
 
 	// https://github.com/hashicorp/terraform-exec/issues/336 :-(
-	state, err := tf.Show(context.Background())
-	if err != nil {
-		log.Fatalf("error running Show: %s", err)
-	}
+	// state, err := tf.Show(context.Background())
+	// if err != nil {
+	// 	log.Fatalf("error running Show: %s", err)
+	// }
 
-	log.Println(state.Values)
-	log.Println(state.Values.Outputs)
+	// log.Println(state.Values)
+	// log.Println(state.Values.Outputs)
 	// log.Println(state.Values.RootModule.Resources)
-	log.Println()
-	siteRuleJson, _ := json.MarshalIndent(state.Values.RootModule.Resources[0], "", "    ")
-	log.Println(string(siteRuleJson))
+	// log.Println()
+	// siteRuleJson, _ := json.MarshalIndent(state.Values.RootModule.Resources[0], "", "    ")
+	// log.Println(string(siteRuleJson))
 
-	log.Println(state.Values.RootModule.Address)
+	// log.Println(state.Values.RootModule.Address)
 }
 
-func import_site_resources(tf *tfexec.Terraform, context context.Context, site string, sigsciSiteRules []sigsci.ResponseSiteRuleBody) {
+func import_site_resources(tf *tfexec.Terraform, context context.Context, site string, sigsciSiteRules []sigsci.ResponseSiteRuleBody) []string {
+	var sigsciSiteIdNoNnumbersArray []string
 	for _, siteRule := range sigsciSiteRules {
-		// log.Println(siteRule)
-		sigsciSiteIdNoNnumbers := strings.Map(removeDigits, siteRule.ID)
+		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 		if siteRule.Type == "request" {
 			// siteRuleJson, _ := json.MarshalIndent(siteRule, "", "    ")
 			log.Printf(`Importing: %s`, siteRule.ID)
@@ -98,8 +98,10 @@ func import_site_resources(tf *tfexec.Terraform, context context.Context, site s
 			if err != nil {
 				log.Fatalf("error running Import: %s", err)
 			}
+			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
 		}
 	}
+	return sigsciSiteIdNoNnumbersArray
 }
 
 // err = tf.Import(context.Background(), "sigsci_site.64de89736993ba01d4fc06ba", "64de89736993ba01d4fc06ba")
@@ -113,7 +115,7 @@ func add_site_resources(f *os.File, sigsciSiteRules []sigsci.ResponseSiteRuleBod
 			log.Println(siteRule.ID)
 			log.Println("write resource to file ", siteRule.ID)
 
-			sigsciSiteIdNoNnumbers := strings.Map(removeDigits, siteRule.ID)
+			sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 
 			data := fmt.Sprintf(`resource "sigsci_site_rule" "%s" {}
 		`, sigsciSiteIdNoNnumbers)
@@ -183,9 +185,39 @@ variable "NGWAF_TOKEN" {
 	log.Println(err)
 }
 
-func removeDigits(r rune) rune {
-	if unicode.IsDigit(r) {
-		r = -1
+func set_up_tf_imports(workingDir string) {
+	d1 := []byte(`
+	import {
+		to = sigsci_site_rule.ebcdceed
+		id = "terraform_ngwaf_site:64de89736993ba01d4fc06ba"
+	  }
+	  
+	`)
+	err := os.WriteFile(workingDir+`/import.tf`, d1, 0644)
+	log.Println(err)
+}
+
+func removeDigits(str string) string {
+	var sb strings.Builder
+	chars := []rune(str)
+	for i := 0; i < len(chars); i++ {
+		char := string(chars[i])
+		sb.WriteString(toCharStrConst(char))
+
 	}
-	return r
+	log.Println(sb.String())
+
+	return sb.String()
+}
+
+func toCharStrConst(s string) string {
+
+	if sNum, err := strconv.ParseInt(s, 10, 32); err == nil {
+		//		fmt.Printf("%T, %v\n", s, sNum)
+		const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		sNum += 1 // add plus one to handle int 0 (zero)
+		log.Println(sNum)
+		return abc[sNum-1 : sNum]
+	}
+	return s
 }
