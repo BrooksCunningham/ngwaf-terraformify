@@ -6,6 +6,7 @@ clean:
 
 run:
 	go run .
+	- terraform plan -generate-config-out=generated.tf
 
 rerun:
 	make clean

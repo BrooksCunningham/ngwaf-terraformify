@@ -13,48 +13,22 @@ import (
 )
 
 func main() {
-	email := os.Getenv("NGWAF_EMAIL")
-	token := os.Getenv("NGWAF_TOKEN")
+	email := os.Getenv("TF_VAR_NGWAF_EMAIL")
+	token := os.Getenv("TF_VAR_NGWAF_TOKEN")
 	sc := sigsci.NewTokenClient(email, token)
 
-	corp := os.Getenv("NGWAF_CORP")
+	corp := os.Getenv("TF_VAR_NGWAF_CORP")
 	site := os.Getenv("TF_VAR_NGWAF_SITE")
-	allSiteRules, err := sc.GetAllSiteRules(corp, site)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// TODOs
-	// ##### 1
-	// Perform tf import
-	// https://registry.terraform.io/providers/signalsciences/sigsci/latest/docs/resources/site
-	// terraform import sigsci_site_rule.test id
-	// terraform import sigsci_site_rule.64de89736993ba01d4fc06ba 64de89736993ba01d4fc06ba
-	// terraform import sigsci_site_rule.ebcdceed terraform_ngwaf_site:64de89736993ba01d4fc06ba
-	// ##### 2
-	// parse the imported tf state to build the configuration
-	// terraform state show sigsci_site.test
 
 	// Step 1
 	execPath := "/usr/local/bin/terraform"
 	workingDir, _ := os.Getwd()
 
-	log.Println(execPath)
-	log.Println(workingDir)
-
 	// perform basic terraform file setup
 	set_up_providers(workingDir)
 	set_up_versions(workingDir)
 	set_up_tf_variables(workingDir)
-	set_up_tf_imports(workingDir)
-
-	// https://gobyexample.com/writing-files
-	// f, err := os.Create(workingDir + `/ngwaf.tf`)
-	// check(err)
-	// defer f.Close()
-
-	// iterate over site rules and write a placeholder for a future terraform import
-	// add_site_resources(f, allSiteRules.Data)
+	set_up_tf_import(workingDir)
 
 	// perform basic terraform init
 	tf, err := tfexec.NewTerraform(workingDir, execPath)
@@ -67,23 +41,33 @@ func main() {
 		log.Fatalf("error running Init: %s", err)
 	}
 
-	// Import the site rules
-	import_site_resources(tf, context.Background(), site, allSiteRules.Data)
+	// Get all site rules for a site.
+	allSiteRules, err := sc.GetAllSiteRules(corp, site)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// https://github.com/hashicorp/terraform-exec/issues/336 :-(
-	// state, err := tf.Show(context.Background())
-	// if err != nil {
-	// 	log.Fatalf("error running Show: %s", err)
-	// }
+	f, err := os.OpenFile(workingDir+`/import.tf`, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+		log.Fatalf("Error writing to import.tf: %s", err)
+	}
+	defer f.Close()
 
-	// log.Println(state.Values)
-	// log.Println(state.Values.Outputs)
-	// log.Println(state.Values.RootModule.Resources)
-	// log.Println()
-	// siteRuleJson, _ := json.MarshalIndent(state.Values.RootModule.Resources[0], "", "    ")
-	// log.Println(string(siteRuleJson))
-
-	// log.Println(state.Values.RootModule.Address)
+	for _, siteRule := range allSiteRules.Data {
+		// fmt.Println("At index", index, "value is", siteRule)
+		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
+		siteImportData := []byte(fmt.Sprintf(`
+import {
+  to = sigsci_site_rule.%v
+  id = "terraform_ngwaf_site:%v"
+}
+		`, sigsciSiteIdNoNnumbers, siteRule.ID))
+		_, err := f.Write(siteImportData)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+	}
 }
 
 func import_site_resources(tf *tfexec.Terraform, context context.Context, site string, sigsciSiteRules []sigsci.ResponseSiteRuleBody) []string {
@@ -92,7 +76,7 @@ func import_site_resources(tf *tfexec.Terraform, context context.Context, site s
 		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 		if siteRule.Type == "request" {
 			// siteRuleJson, _ := json.MarshalIndent(siteRule, "", "    ")
-			log.Printf(`Importing: %s`, siteRule.ID)
+			// log.Printf(`Importing: %s`, siteRule.ID)
 			// terraform import sigsci_site_rule.ebcdceed terraform_ngwaf_site:64de89736993ba01d4fc06ba
 			err := tf.Import(context, fmt.Sprintf(`%s.%s`, `sigsci_site_rule`, sigsciSiteIdNoNnumbers), fmt.Sprintf("%s:%s", site, siteRule.ID))
 			if err != nil {
@@ -104,17 +88,10 @@ func import_site_resources(tf *tfexec.Terraform, context context.Context, site s
 	return sigsciSiteIdNoNnumbersArray
 }
 
-// err = tf.Import(context.Background(), "sigsci_site.64de89736993ba01d4fc06ba", "64de89736993ba01d4fc06ba")
 func add_site_resources(f *os.File, sigsciSiteRules []sigsci.ResponseSiteRuleBody) {
 
 	for _, siteRule := range sigsciSiteRules {
-		// log.Println(siteRule)
 		if siteRule.Type == "request" {
-			// siteRuleJson, _ := json.MarshalIndent(siteRule, "", "    ")
-			// log.Println(string(siteRuleJson))
-			log.Println(siteRule.ID)
-			log.Println("write resource to file ", siteRule.ID)
-
 			sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 
 			data := fmt.Sprintf(`resource "sigsci_site_rule" "%s" {}
@@ -122,8 +99,6 @@ func add_site_resources(f *os.File, sigsciSiteRules []sigsci.ResponseSiteRuleBod
 			f.WriteString(data)
 		}
 	}
-	// fmt.Println(err)
-	// fmt.Printf("wrote %d bytes\n", n3)
 	f.Sync()
 }
 
@@ -141,7 +116,9 @@ terraform {
 }
 	`)
 	err := os.WriteFile(workingDir+`/versions.tf`, d1, 0644)
-	log.Println(err)
+	if err != nil {
+		log.Fatalf("Error writing: %s", err)
+	}
 }
 
 func set_up_providers(workingDir string) {
@@ -153,7 +130,9 @@ provider "sigsci" {
 }
 	`)
 	err := os.WriteFile(workingDir+`/providers.tf`, d1, 0644)
-	log.Println(err)
+	if err != nil {
+		log.Fatalf("Error writing: %s", err)
+	}
 }
 
 func set_up_tf_variables(workingDir string) {
@@ -182,19 +161,17 @@ variable "NGWAF_TOKEN" {
 #### NGWAF variables - End
 	`)
 	err := os.WriteFile(workingDir+`/variables.tf`, d1, 0644)
-	log.Println(err)
+	if err != nil {
+		log.Fatalf("Error writing: %s", err)
+	}
 }
 
-func set_up_tf_imports(workingDir string) {
-	d1 := []byte(`
-	import {
-		to = sigsci_site_rule.ebcdceed
-		id = "terraform_ngwaf_site:64de89736993ba01d4fc06ba"
-	  }
-	  
-	`)
+func set_up_tf_import(workingDir string) {
+	d1 := []byte(``)
 	err := os.WriteFile(workingDir+`/import.tf`, d1, 0644)
-	log.Println(err)
+	if err != nil {
+		log.Fatalf("Error writing: %s", err)
+	}
 }
 
 func removeDigits(str string) string {
@@ -205,18 +182,14 @@ func removeDigits(str string) string {
 		sb.WriteString(toCharStrConst(char))
 
 	}
-	log.Println(sb.String())
-
 	return sb.String()
 }
 
 func toCharStrConst(s string) string {
 
 	if sNum, err := strconv.ParseInt(s, 10, 32); err == nil {
-		//		fmt.Printf("%T, %v\n", s, sNum)
 		const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		sNum += 1 // add plus one to handle int 0 (zero)
-		log.Println(sNum)
 		return abc[sNum-1 : sNum]
 	}
 	return s
