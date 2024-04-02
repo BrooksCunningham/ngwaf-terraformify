@@ -1,15 +1,16 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/terraform-exec/tfexec"
+	// "github.com/hashicorp/terraform-exec/tfexec"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	sigsci "github.com/signalsciences/go-sigsci"
+	"github.com/zclconf/go-cty/cty"
 )
 
 func main() {
@@ -21,158 +22,60 @@ func main() {
 	site := os.Getenv("TF_VAR_NGWAF_SITE")
 
 	// Step 1
-	execPath := "/usr/local/bin/terraform"
-	workingDir, _ := os.Getwd()
+	// execPath := "/usr/local/bin/terraform"
+	// workingDir, _ := os.Getwd()
+	// fmt.Println("workingDir", workingDir)
 
-	// perform basic terraform file setup
-	set_up_providers(workingDir)
-	set_up_versions(workingDir)
-	set_up_tf_variables(workingDir)
-	set_up_tf_import(workingDir)
+	allSiteRules, _ := sc.GetAllSiteRules(corp, site)
+	allSiteRulesNoNumbers := set_import_site_rule_resources(allSiteRules)
+	fmt.Println(allSiteRulesNoNumbers)
+}
 
-	// perform basic terraform init
-	tf, err := tfexec.NewTerraform(workingDir, execPath)
-	if err != nil {
-		log.Fatalf("error running NewTerraform: %s", err)
-	}
+func set_import_site_rule_resources(allSiteRules sigsci.ResponseSiteRuleBodyList) []string {
+	// allSiteRules, _ := sc.GetAllSiteRules(corp, site)
+	var sigsciSiteIdNoNnumbersArray []string
 
-	err = tf.Init(context.Background(), tfexec.Upgrade(true))
-	if err != nil {
-		log.Fatalf("error running Init: %s", err)
-	}
-
-	// Get all site rules for a site.
-	allSiteRules, err := sc.GetAllSiteRules(corp, site)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	f, err := os.OpenFile(workingDir+`/import.tf`, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-	if err != nil {
-		log.Fatalf("Error writing to import.tf: %s", err)
-	}
-	defer f.Close()
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
 
 	for _, siteRule := range allSiteRules.Data {
-		// fmt.Println("At index", index, "value is", siteRule)
-		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
-		siteImportData := []byte(fmt.Sprintf(`
-import {
-  to = sigsci_site_rule.%v
-  id = "terraform_ngwaf_site:%v"
-}
-		`, sigsciSiteIdNoNnumbers, siteRule.ID))
-		_, err := f.Write(siteImportData)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	}
-}
-
-func import_site_resources(tf *tfexec.Terraform, context context.Context, site string, sigsciSiteRules []sigsci.ResponseSiteRuleBody) []string {
-	var sigsciSiteIdNoNnumbersArray []string
-	for _, siteRule := range sigsciSiteRules {
+		// fmt.Println(`Importing:`, siteRule)
 		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 		if siteRule.Type == "request" {
-			// siteRuleJson, _ := json.MarshalIndent(siteRule, "", "    ")
-			// log.Printf(`Importing: %s`, siteRule.ID)
-			// terraform import sigsci_site_rule.ebcdceed terraform_ngwaf_site:64de89736993ba01d4fc06ba
-			err := tf.Import(context, fmt.Sprintf(`%s.%s`, `sigsci_site_rule`, sigsciSiteIdNoNnumbers), fmt.Sprintf("%s:%s", site, siteRule.ID))
-			if err != nil {
-				log.Fatalf("error running Import: %s", err)
+			// Create a new block (e.g., a resource block)
+			// block := file.Body().AppendNewBlock("resource", []string{"aws_instance", "my_instance"})
+			block := file.Body().AppendNewBlock("import", nil)
+			// Set attributes for the block
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`terraform_ngwaf_site:%s`, siteRule.ID)))
+
+			tokens := hclwrite.Tokens{
+				{
+					Type:  hclsyntax.TokenIdent,
+					Bytes: []byte(fmt.Sprintf(`sigsci_site_rule.%s`, sigsciSiteIdNoNnumbers)),
+				},
 			}
+
+			block.Body().SetAttributeRaw("to", tokens)
+
 			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
 		}
+	}
+
+	// Write the HCL configuration to stdout
+	if _, err := file.WriteTo(os.Stdout); err != nil {
+		fmt.Println(`Error writing HCL:`, err)
+		os.Exit(1)
 	}
 	return sigsciSiteIdNoNnumbersArray
 }
 
-func add_site_resources(f *os.File, sigsciSiteRules []sigsci.ResponseSiteRuleBody) {
-
-	for _, siteRule := range sigsciSiteRules {
-		if siteRule.Type == "request" {
-			sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
-
-			data := fmt.Sprintf(`resource "sigsci_site_rule" "%s" {}
-		`, sigsciSiteIdNoNnumbers)
-			f.WriteString(data)
-		}
-	}
-	f.Sync()
-}
-
-func set_up_versions(workingDir string) {
-	d1 := []byte(`
-# Terraform 0.13+ requires providers to be declared in a "required_providers" block
-# https://registry.terraform.io/providers/fastly/fastly/latest/docs
-terraform {
-  required_providers {
-    sigsci = {
-      source = "signalsciences/sigsci"
-      version = ">= 2.1.0"
-    }
-  }
-}
-	`)
-	err := os.WriteFile(workingDir+`/versions.tf`, d1, 0644)
-	if err != nil {
-		log.Fatalf("Error writing: %s", err)
-	}
-}
-
-func set_up_providers(workingDir string) {
-	d1 := []byte(`
-provider "sigsci" {
-	corp = var.NGWAF_CORP
-	email = var.NGWAF_EMAIL
-	auth_token = var.NGWAF_TOKEN
-}
-	`)
-	err := os.WriteFile(workingDir+`/providers.tf`, d1, 0644)
-	if err != nil {
-		log.Fatalf("Error writing: %s", err)
-	}
-}
-
-func set_up_tf_variables(workingDir string) {
-	d1 := []byte(`
-#### NGWAF variables - Start
-
-variable "NGWAF_CORP" {
-	type          = string
-	description   = "Corp name for NGWAF"
-}
-
-variable "NGWAF_SITE" {
-	type          = string
-	description   = "Site name for NGWAF"
-}
-
-variable "NGWAF_EMAIL" {
-	type        = string
-	description = "Email address associated with the token for the NGWAF API."
-}
-variable "NGWAF_TOKEN" {
-	type        = string
-	description = "Secret token for the NGWAF API."
-	sensitive   = true
-}
-#### NGWAF variables - End
-	`)
-	err := os.WriteFile(workingDir+`/variables.tf`, d1, 0644)
-	if err != nil {
-		log.Fatalf("Error writing: %s", err)
-	}
-}
-
-func set_up_tf_import(workingDir string) {
-	d1 := []byte(``)
-	err := os.WriteFile(workingDir+`/import.tf`, d1, 0644)
-	if err != nil {
-		log.Fatalf("Error writing: %s", err)
-	}
-}
+// func set_up_tf_import(workingDir string) {
+// 	d1 := []byte(``)
+// 	err := os.WriteFile(workingDir+`/import.tf`, d1, 0644)
+// 	if err != nil {
+// 		log.Fatalf("Error writing: %s", err)
+// 	}
+// }
 
 func removeDigits(str string) string {
 	var sb strings.Builder
