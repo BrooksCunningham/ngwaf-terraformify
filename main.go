@@ -62,10 +62,14 @@ func set_import_site_rule_resources(allSiteRules sigsci.ResponseSiteRuleBodyList
 	}
 
 	// Write the HCL configuration to stdout
-	if _, err := file.WriteTo(os.Stdout); err != nil {
+	// if _, err := file.WriteTo(os.Stdout); err != nil {
+	// Open the file
+	fileImportTf, _ := os.Create("import.tf")
+	if _, err := file.WriteTo(fileImportTf); err != nil {
 		fmt.Println(`Error writing HCL:`, err)
 		os.Exit(1)
 	}
+	defer fileImportTf.Close()
 	return sigsciSiteIdNoNnumbersArray
 }
 
