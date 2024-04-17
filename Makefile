@@ -1,11 +1,12 @@
 clean:
 	- rm -r .terraform*
-	- rm *.tf
 	- rm *.tfstate*
 	- rm *.tfstate.backup
+	- rm generated.tf
 
 run:
 	go run .
+	- terraform init
 	- terraform plan -generate-config-out=generated.tf
 
 rerun:
