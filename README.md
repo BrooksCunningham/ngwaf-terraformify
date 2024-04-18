@@ -4,12 +4,13 @@ It imports your NGWAF settings and generates the Terraform configuration for you
 
 ## Feature list and status
 
-- [ ] Corp Rules
-- [ ] Corp Lists
-- [ ] Corp Signals
-- [x] Site Rules :white_check_mark:
-- [ ] Site Signals
-- [ ] Site Alerts
+- [x] Corp Rules    :white_check_mark:
+- [x] Corp Lists    :white_check_mark:
+- [x] Corp Signals  :white_check_mark:
+- [x] Site Rules    :white_check_mark:
+- [x] Site Lists    :white_check_mark:
+- [x] Site Signals  :white_check_mark:
+- [ ] Site Alerts   
 - [ ] Space lasers
 - [ ] World peace
 - [ ] Coffee maker
