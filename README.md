@@ -7,7 +7,7 @@ It imports your NGWAF settings and generates the Terraform configuration for you
 - [ ] Corp Rules
 - [ ] Corp Lists
 - [ ] Corp Signals
-- [x] Site Rules
+- [x] Site Rules :white_check_mark:
 - [ ] Site Signals
 - [ ] Site Alerts
 - [ ] Space lasers
