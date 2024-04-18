@@ -27,12 +27,53 @@ func main() {
 	// fmt.Println("workingDir", workingDir)
 
 	allSiteRules, _ := sc.GetAllSiteRules(corp, site)
-	allSiteRulesNoNumbers := set_import_site_rule_resources(allSiteRules)
-	fmt.Println(allSiteRulesNoNumbers)
+	set_import_site_rule_resources(allSiteRules)
+
+	allCorpRules, _ := sc.GetAllCorpRules(corp)
+	set_import_corp_rule_resources(allCorpRules)
+
+	// fmt.Println(allCorpRules)
+
+	fmt.Println("done")
+
+}
+
+func set_import_corp_rule_resources(allCorpRules sigsci.ResponseCorpRuleBodyList) []string {
+	var sigsciCorpIdNoNnumbersArray []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, corpRule := range allCorpRules.Data {
+		// fmt.Println(`Importing:`, siteRule)
+		sigsciCorpIdNoNnumbers := removeDigits(corpRule.ID)
+		if corpRule.Type == "request" {
+			// Create a new block (e.g., a resource block)
+			block := file.Body().AppendNewBlock("import", nil)
+			// Set attributes for the block
+			block.Body().SetAttributeValue("id", cty.StringVal(corpRule.ID))
+			tokens := hclwrite.Tokens{
+				{
+					Type:  hclsyntax.TokenIdent,
+					Bytes: []byte(fmt.Sprintf(`sigsci_corp_rule.%s`, sigsciCorpIdNoNnumbers)),
+				},
+			}
+			block.Body().SetAttributeRaw("to", tokens)
+			sigsciCorpIdNoNnumbersArray = append(sigsciCorpIdNoNnumbersArray, sigsciCorpIdNoNnumbers)
+		}
+	}
+
+	// Open the file and write
+	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if _, err := file.WriteTo(fileImportTf); err != nil {
+		fmt.Println(`Error writing HCL:`, err)
+		os.Exit(1)
+	}
+	defer fileImportTf.Close()
+	return sigsciCorpIdNoNnumbersArray
 }
 
 func set_import_site_rule_resources(allSiteRules sigsci.ResponseSiteRuleBodyList) []string {
-	// allSiteRules, _ := sc.GetAllSiteRules(corp, site)
 	var sigsciSiteIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
@@ -43,28 +84,22 @@ func set_import_site_rule_resources(allSiteRules sigsci.ResponseSiteRuleBodyList
 		sigsciSiteIdNoNnumbers := removeDigits(siteRule.ID)
 		if siteRule.Type == "request" {
 			// Create a new block (e.g., a resource block)
-			// block := file.Body().AppendNewBlock("resource", []string{"aws_instance", "my_instance"})
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
 			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`terraform_ngwaf_site:%s`, siteRule.ID)))
-
 			tokens := hclwrite.Tokens{
 				{
 					Type:  hclsyntax.TokenIdent,
 					Bytes: []byte(fmt.Sprintf(`sigsci_site_rule.%s`, sigsciSiteIdNoNnumbers)),
 				},
 			}
-
 			block.Body().SetAttributeRaw("to", tokens)
-
 			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
 		}
 	}
 
-	// Write the HCL configuration to stdout
-	// if _, err := file.WriteTo(os.Stdout); err != nil {
-	// Open the file
-	fileImportTf, _ := os.Create("import.tf")
+	// Open the file and write
+	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if _, err := file.WriteTo(fileImportTf); err != nil {
 		fmt.Println(`Error writing HCL:`, err)
 		os.Exit(1)
@@ -72,14 +107,6 @@ func set_import_site_rule_resources(allSiteRules sigsci.ResponseSiteRuleBodyList
 	defer fileImportTf.Close()
 	return sigsciSiteIdNoNnumbersArray
 }
-
-// func set_up_tf_import(workingDir string) {
-// 	d1 := []byte(``)
-// 	err := os.WriteFile(workingDir+`/import.tf`, d1, 0644)
-// 	if err != nil {
-// 		log.Fatalf("Error writing: %s", err)
-// 	}
-// }
 
 func removeDigits(str string) string {
 	var sb strings.Builder

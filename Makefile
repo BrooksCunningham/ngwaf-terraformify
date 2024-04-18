@@ -3,6 +3,7 @@ clean:
 	- rm *.tfstate*
 	- rm *.tfstate.backup
 	- rm generated.tf
+	- rm import.tf
 
 run:
 	go run .
