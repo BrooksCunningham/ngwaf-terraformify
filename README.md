@@ -1,8 +1,18 @@
 # Fastly's Next-Gen WAF Terraform Configuration generation tool
 
-What does this thing do?
-
 It imports your NGWAF settings and generates the Terraform configuration for your NGWAF config in HCL.
+
+## Feature list and status
+
+- [ ] Corp Rules
+- [ ] Corp Lists
+- [ ] Corp Signals
+- [x] Site Rules
+- [ ] Site Signals
+- [ ] Site Alerts
+- [ ] Space lasers
+- [ ] World peace
+- [ ] Coffee maker
 
 # Set up
 Environment variables must exist
