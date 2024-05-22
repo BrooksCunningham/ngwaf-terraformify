@@ -1,6 +1,6 @@
 # Fastly's Next-Gen WAF Terraform Configuration generation tool
 
-It imports your NGWAF settings and generates the Terraform configuration for your NGWAF config in HCL.
+Imports your NGWAF settings and generates the Terraform configuration for your NGWAF config in HCL.
 
 ## Feature list and status
 
