@@ -1,16 +1,19 @@
 # Fastly's Next-Gen WAF Terraform Configuration generation tool
 
-Imports your NGWAF settings and generates the Terraform configuration for your NGWAF config in HCL.
+It imports your NGWAF settings and generates the Terraform configuration for your NGWAF config in HCL.
 
 ## Feature list and status
 
 - [x] Corp Rules    :white_check_mark:
 - [x] Corp Lists    :white_check_mark:
 - [x] Corp Signals  :white_check_mark:
-- [x] Site Rules    :white_check_mark:
+- [x] Site Request Rules    :white_check_mark:
+- [ ] Site Rate Limiting Rules
+- [ ] Site Templated Rules
 - [x] Site Lists    :white_check_mark:
 - [x] Site Signals  :white_check_mark:
-- [ ] Site Alerts   
+- [x] Site Alerts   
+- [x] Site Agent Alerts   
 - [ ] Space lasers
 - [ ] World peace
 - [ ] Coffee maker

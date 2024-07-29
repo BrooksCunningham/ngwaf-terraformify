@@ -18,7 +18,6 @@ func main() {
 	sc := sigsci.NewTokenClient(email, token)
 
 	corp := os.Getenv("TF_VAR_NGWAF_CORP")
-	// site := os.Getenv("TF_VAR_NGWAF_SITE")
 
 	// Corp imports
 	allCorpRules, _ := sc.GetAllCorpRules(corp)
@@ -32,18 +31,37 @@ func main() {
 
 	allSiteNames, _ := sc.ListSites(corp)
 	set_import_sites_resources(allSiteNames)
-	// fmt.Println(allSiteNames)
 
 	for _, ngwafSite := range allSiteNames {
 		// Site imports
 		allSiteRules, _ := sc.GetAllSiteRules(corp, ngwafSite.Name)
 		set_import_site_rule_resources(ngwafSite.Name, allSiteRules)
 
+		// Site tags
 		allSiteSignals, _ := sc.GetAllSiteSignalTags(corp, ngwafSite.Name)
 		set_import_site_signals_resources(ngwafSite.Name, allSiteSignals)
 
+		// Site lists
 		allSiteLists, _ := sc.GetAllSiteLists(corp, ngwafSite.Name)
 		set_import_site_list_resources(ngwafSite.Name, allSiteLists)
+
+		// Site alerts and Agent alerts
+		allSiteAlerts, _ := sc.ListCustomAlerts(corp, ngwafSite.Name)
+
+		var infoAlerts []sigsci.CustomAlert
+		var agentAlerts []sigsci.CustomAlert
+		for _, siteAlert := range allSiteAlerts {
+			if siteAlert.Action == "info" {
+				infoAlerts = append(infoAlerts, siteAlert)
+			}
+			if siteAlert.Action == "siteMetricInfo" {
+				agentAlerts = append(agentAlerts, siteAlert)
+			}
+		}
+
+		// Site agent alerts and Site alerts
+		set_import_site_agent_alerts_resources(ngwafSite.Name, agentAlerts)
+		set_import_site_alerts_resources(ngwafSite.Name, infoAlerts)
 	}
 
 	fmt.Println("done")
@@ -75,12 +93,7 @@ func set_import_corp_rule_resources(allCorpRules sigsci.ResponseCorpRuleBodyList
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
-	}
-	defer fileImportTf.Close()
+	write_terraform_config_to_file(file, "import.tf")
 	return sigsciCorpIdNoNnumbersArray
 }
 
@@ -143,12 +156,7 @@ func set_import_corp_signals_resources(allCorpList sigsci.ResponseSignalTagBodyL
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
-	}
-	defer fileImportTf.Close()
+	write_terraform_config_to_file(file, "import.tf")
 	return sigsciIdNoNnumbersArray
 }
 
@@ -175,12 +183,8 @@ func set_import_sites_resources(allCorpList []sigsci.Site) []string {
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
-	}
-	defer fileImportTf.Close()
+	write_terraform_config_to_file(file, "import.tf")
+
 	return sigsciIdNoNnumbersArray
 }
 
@@ -208,12 +212,63 @@ func set_import_site_list_resources(ngwafSiteShortName string, list sigsci.Respo
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
+	write_terraform_config_to_file(file, "import.tf")
+	return sigsciIdNoNnumbersArray
+}
+
+// Site alerts
+func set_import_site_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert) []string {
+	var sigsciIdNoNnumbersArray []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, item := range list {
+		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
+		// Create a new block (e.g., a resource block)
+		block := file.Body().AppendNewBlock("import", nil)
+		// Set attributes for the block
+		block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
+		tokens := hclwrite.Tokens{
+			{
+				Type:  hclsyntax.TokenIdent,
+				Bytes: []byte(fmt.Sprintf(`sigsci_site_alert.%s`, sigsciIdNoNnumbers)),
+			},
+		}
+		block.Body().SetAttributeRaw("to", tokens)
+		sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
 	}
-	defer fileImportTf.Close()
+
+	// Open the file and write
+	write_terraform_config_to_file(file, "import.tf")
+	return sigsciIdNoNnumbersArray
+}
+
+// Site agent alerts
+func set_import_site_agent_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert) []string {
+	var sigsciIdNoNnumbersArray []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, item := range list {
+		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
+		// Create a new block (e.g., a resource block)
+		block := file.Body().AppendNewBlock("import", nil)
+		// Set attributes for the block
+		block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
+		tokens := hclwrite.Tokens{
+			{
+				Type:  hclsyntax.TokenIdent,
+				Bytes: []byte(fmt.Sprintf(`sigsci_site_agent_alert.%s`, sigsciIdNoNnumbers)),
+			},
+		}
+		block.Body().SetAttributeRaw("to", tokens)
+		sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
+	}
+
+	// Open the file and write
+	write_terraform_config_to_file(file, "import.tf")
 	return sigsciIdNoNnumbersArray
 }
 
@@ -240,12 +295,8 @@ func set_import_site_signals_resources(ngwafSiteShortName string, list sigsci.Re
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
-	}
-	defer fileImportTf.Close()
+	write_terraform_config_to_file(file, "import.tf")
+
 	return sigsciIdNoNnumbersArray
 }
 
@@ -274,12 +325,8 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 	}
 
 	// Open the file and write
-	fileImportTf, _ := os.OpenFile("import.tf", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if _, err := file.WriteTo(fileImportTf); err != nil {
-		fmt.Println(`Error writing HCL:`, err)
-		os.Exit(1)
-	}
-	defer fileImportTf.Close()
+	write_terraform_config_to_file(file, "import.tf")
+
 	return sigsciSiteIdNoNnumbersArray
 }
 
@@ -306,4 +353,16 @@ func toCharStrConst(s string) string {
 		return abc[sNum-1 : sNum]
 	}
 	return s
+}
+
+func write_terraform_config_to_file(hclFile *hclwrite.File, fileName string) bool {
+
+	// Open the file and write
+	fileImportTf, _ := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if _, err := hclFile.WriteTo(fileImportTf); err != nil {
+		fmt.Println(`Error writing HCL:`, err)
+		return false
+	}
+	defer fileImportTf.Close()
+	return true
 }
