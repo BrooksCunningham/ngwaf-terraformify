@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/hashicorp/hcl/v2 v2.20.1
-	github.com/signalsciences/go-sigsci v0.1.18
+	github.com/signalsciences/go-sigsci v0.1.21
 	github.com/zclconf/go-cty v1.13.0
 )
 

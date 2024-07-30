@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -32,10 +35,15 @@ func main() {
 	allSiteNames, _ := sc.ListSites(corp)
 	set_import_sites_resources(allSiteNames)
 
+	// Site imports
 	for _, ngwafSite := range allSiteNames {
-		// Site imports
+		// Site rules
 		allSiteRules, _ := sc.GetAllSiteRules(corp, ngwafSite.Name)
 		set_import_site_rule_resources(ngwafSite.Name, allSiteRules)
+
+		// Site Legacy Templated Rules
+		allLegacyTemplatedRules := get_active_legacy_templated_rules(sc, corp, ngwafSite.Name, email, token)
+		set_import_site_legacy_templated_rule_resources(ngwafSite.Name, allLegacyTemplatedRules)
 
 		// Site tags
 		allSiteSignals, _ := sc.GetAllSiteSignalTags(corp, ngwafSite.Name)
@@ -119,7 +127,6 @@ func set_import_corp_list_resources(list sigsci.ResponseListBodyList) []string {
 		}
 		block.Body().SetAttributeRaw("to", tokens)
 		sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
-		// }
 	}
 
 	// Open the file and write
@@ -152,7 +159,6 @@ func set_import_corp_signals_resources(allCorpList sigsci.ResponseSignalTagBodyL
 		}
 		block.Body().SetAttributeRaw("to", tokens)
 		sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
-		// }
 	}
 
 	// Open the file and write
@@ -308,7 +314,37 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 
 	for _, siteRule := range allSiteRules.Data {
 		sigsciSiteIdNoNnumbers := sanitizeTfId(siteRule.ID)
-		if siteRule.Type == "request" {
+
+		switch siteRule.Type {
+		case "request":
+			// Create a new block (e.g., a resource block)
+			block := file.Body().AppendNewBlock("import", nil)
+			// Set attributes for the block
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, siteRule.ID)))
+			tokens := hclwrite.Tokens{
+				{
+					Type:  hclsyntax.TokenIdent,
+					Bytes: []byte(fmt.Sprintf(`sigsci_site_rule.%s`, sigsciSiteIdNoNnumbers)),
+				},
+			}
+			block.Body().SetAttributeRaw("to", tokens)
+			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
+		case "rateLimit":
+			// fmt.Printf("%+v\n", siteRule)
+			// Create a new block (e.g., a resource block)
+			block := file.Body().AppendNewBlock("import", nil)
+			// Set attributes for the block
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, siteRule.ID)))
+			tokens := hclwrite.Tokens{
+				{
+					Type:  hclsyntax.TokenIdent,
+					Bytes: []byte(fmt.Sprintf(`sigsci_site_rule.%s`, sigsciSiteIdNoNnumbers)),
+				},
+			}
+			block.Body().SetAttributeRaw("to", tokens)
+			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
+
+		case "templatedSignal":
 			// Create a new block (e.g., a resource block)
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
@@ -323,11 +359,39 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 			sigsciSiteIdNoNnumbersArray = append(sigsciSiteIdNoNnumbersArray, sigsciSiteIdNoNnumbers)
 		}
 	}
-
 	// Open the file and write
 	write_terraform_config_to_file(file, "import.tf")
 
 	return sigsciSiteIdNoNnumbersArray
+}
+
+func set_import_site_legacy_templated_rule_resources(ngwafSiteShortName string, list ResponseSiteLegacyTemplatedRuleBodyList) []string {
+	var sigsciIdNoNnumbersArray []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, item := range list.Data {
+		if len(item.Detections) > 0 {
+			sigsciIdNoNnumbers := sanitizeTfId(item.Name)
+			// Create a new block (e.g., a resource block)
+			block := file.Body().AppendNewBlock("import", nil)
+			// Set attributes for the block
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.Name)))
+			tokens := hclwrite.Tokens{
+				{
+					Type:  hclsyntax.TokenIdent,
+					Bytes: []byte(fmt.Sprintf(`sigsci_site_templated_rule.%s%s`, ngwafSiteShortName, sigsciIdNoNnumbers)),
+				},
+			}
+			block.Body().SetAttributeRaw("to", tokens)
+			sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
+		}
+	}
+
+	// Open the file and write
+	write_terraform_config_to_file(file, "import.tf")
+	return sigsciIdNoNnumbersArray
 }
 
 func sanitizeTfId(str string) string {
@@ -365,4 +429,78 @@ func write_terraform_config_to_file(hclFile *hclwrite.File, fileName string) boo
 	}
 	defer fileImportTf.Close()
 	return true
+}
+
+func get_active_legacy_templated_rules(sc sigsci.Client, corpName string, siteName string, email string, token string) ResponseSiteLegacyTemplatedRuleBodyList {
+	// Data structure for JSON input
+
+	resp, _ := doRequestDetailed("GET", fmt.Sprintf("/v0/corps/%s/sites/%s/configuredtemplates", corpName, siteName), "", email, token)
+
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	var legacyTemplatedRuledata ResponseSiteLegacyTemplatedRuleBodyList
+
+	json.Unmarshal(body, &legacyTemplatedRuledata)
+
+	return legacyTemplatedRuledata
+}
+
+func doRequestDetailed(method string, url string, reqBody string, email string, token string) (*http.Response, error) {
+	apiURL := "https://dashboard.signalsciences.net/api"
+	client := &http.Client{}
+
+	var b io.Reader
+	if reqBody != "" {
+		b = strings.NewReader(reqBody)
+	}
+
+	req, _ := http.NewRequest(method, apiURL+url, b)
+
+	if email != "" {
+		// token auth
+		req.Header.Set("X-API-User", email)
+		req.Header.Set("X-API-Token", token)
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "go-sigsci")
+
+	resp, err := client.Do(req)
+
+	return resp, err
+}
+
+type ResponseSiteLegacyTemplatedRuleBodyList struct {
+	TotalCount int                                   `json:"totalCount"`
+	Data       []ResponseSiteLegacyTemplatedRuleBody `json:"data"`
+}
+
+type ResponseSiteLegacyTemplatedRuleBody struct {
+	CreateSiteLegacyTemplatedRuleBody
+	Name       string      `json:"name"`
+	Detections []Detection `json:"detections"`
+}
+
+type CreateSiteLegacyTemplatedRuleBody struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Enabled   bool    `json:"enabled"`
+	Fields    []Field `json:"fields"`
+	Created   string  `json:"created"`
+	CreatedBy string  `json:"createdBy"`
+}
+
+type Field struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type Detection struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Enabled   bool    `json:"enabled"`
+	Fields    []Field `json:"fields"`
+	Created   string  `json:"created"`
+	CreatedBy string  `json:"createdBy"`
 }
