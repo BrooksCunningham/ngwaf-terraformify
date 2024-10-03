@@ -31,5 +31,3 @@ Just run `make run`
 # Need to start over?
 `make rerun`
 
-# Limitations
-There are many limitations. This currently only attempts to import site request rules.
