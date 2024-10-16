@@ -5,11 +5,6 @@ variable "NGWAF_CORP" {
 	description   = "Corp name for NGWAF"
 }
 
-variable "NGWAF_SITE" {
-	type          = string
-	description   = "Site name for NGWAF"
-}
-
 variable "NGWAF_EMAIL" {
 	type        = string
 	description = "Email address associated with the token for the NGWAF API."
