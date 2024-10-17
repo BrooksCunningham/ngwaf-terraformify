@@ -20,7 +20,6 @@ This tool imports your NGWAF settings to the Terraform state and generates the T
 Environment variables must exist
 ```
 TF_VAR_NGWAF_CORP
-TF_VAR_NGWAF_SITE
 TF_VAR_NGWAF_EMAIL
 TF_VAR_NGWAF_TOKEN
 ```
