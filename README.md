@@ -22,6 +22,9 @@ Environment variables must exist
 TF_VAR_NGWAF_CORP
 TF_VAR_NGWAF_EMAIL
 TF_VAR_NGWAF_TOKEN
+TF_VAR_SIGSCI_CORP
+TF_VAR_SIGSCI_EMAIL
+TF_VAR_SIGSCI_TOKEN
 ```
 
 Just run `make run`
