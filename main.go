@@ -53,6 +53,9 @@ func main() {
 		allSiteLists, _ := sc.GetAllSiteLists(corp, ngwafSite.Name)
 		set_import_site_list_resources(ngwafSite.Name, allSiteLists)
 
+		allSiteIntegrations, _ := sc.ListIntegrations(corp, ngwafSite.Name)
+		set_import_site_integration_resources(ngwafSite.Name, allSiteIntegrations)
+
 		// Site alerts and Agent alerts
 		allSiteAlerts, _ := sc.ListCustomAlerts(corp, ngwafSite.Name)
 
@@ -211,6 +214,34 @@ func set_import_site_list_resources(ngwafSiteShortName string, list sigsci.Respo
 			{
 				Type:  hclsyntax.TokenIdent,
 				Bytes: []byte(fmt.Sprintf(`sigsci_site_list.%s%s`, ngwafSiteShortName, sigsciIdNoNnumbers)),
+			},
+		}
+		block.Body().SetAttributeRaw("to", tokens)
+		sigsciIdNoNnumbersArray = append(sigsciIdNoNnumbersArray, sigsciIdNoNnumbers)
+	}
+
+	// Open the file and write
+	write_terraform_config_to_file(file, "import.tf")
+	return sigsciIdNoNnumbersArray
+}
+
+// Site alerts
+func set_import_site_integration_resources(ngwafSiteShortName string, list []sigsci.Integration) []string {
+	var sigsciIdNoNnumbersArray []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, item := range list {
+		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
+		// Create a new block (e.g., a resource block)
+		block := file.Body().AppendNewBlock("import", nil)
+		// Set attributes for the block
+		block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
+		tokens := hclwrite.Tokens{
+			{
+				Type:  hclsyntax.TokenIdent,
+				Bytes: []byte(fmt.Sprintf(`sigsci_site_integration.%s`, sigsciIdNoNnumbers)),
 			},
 		}
 		block.Body().SetAttributeRaw("to", tokens)

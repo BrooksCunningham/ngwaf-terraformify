@@ -3,17 +3,18 @@
 This tool imports your NGWAF settings to the Terraform state and generates the Terraform configuration for your NGWAF config in HCL.
 
 ## Feature list and status
-- [x] Corp Rules                :white_check_mark:
-- [x] Corp Lists                :white_check_mark:
-- [x] Corp Signals              :white_check_mark:
-- [x] Site Request Rules        :white_check_mark:
-- [x] Site Rate Limiting Rules  :white_check_mark:
-- [x] Site Templated Rules      :white_check_mark:
-- [x] Site Lists                :white_check_mark:
-- [x] Site Signals              :white_check_mark:
-- [x] Site Alerts               :white_check_mark:
-- [x] Site Agent Alerts         :white_check_mark:
-- [ ] Site Integrations
+- [x] Corp Rules                
+- [x] Corp Lists                
+- [x] Corp Signals              
+- [x] Site Request Rules        
+- [x] Site Rate Limiting Rules  
+- [x] Site Templated Rules      
+- [x] Site Lists                
+- [x] Site Signals              
+- [x] Site Alerts               
+- [x] Site Agent Alerts         
+- [x] Site Integrations
+- [ ] Edge integration
 - [ ] Space lasers
 - [ ] Coffee maker
 
