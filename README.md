@@ -13,6 +13,7 @@ This tool imports your NGWAF settings to the Terraform state and generates the T
 - [x] Site Signals              :white_check_mark:
 - [x] Site Alerts               :white_check_mark:
 - [x] Site Agent Alerts         :white_check_mark:
+- [ ] Site Integrations
 - [ ] Space lasers
 - [ ] Coffee maker
 
