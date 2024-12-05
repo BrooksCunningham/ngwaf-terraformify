@@ -14,6 +14,7 @@ This tool imports your NGWAF settings to the Terraform state and generates the T
 - [x] Site Alerts               
 - [x] Site Agent Alerts         
 - [x] Site Integrations
+- [ ] Header Link
 - [ ] Edge integration
 - [ ] Space lasers
 - [ ] Coffee maker
