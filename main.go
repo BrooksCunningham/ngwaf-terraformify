@@ -25,13 +25,10 @@ func main() {
 
 	corp := os.Getenv("TF_VAR_NGWAF_CORP")
 
-	extractor := NewStateIDExtractor(filepath.Join(".", "terraform.tfstate"))
-
-	if err := extractor.ReadStateFile(); err != nil {
-		log.Fatal(err)
-	}
-
-	existing_terraform_ids, err := extractor.ExtractIDs("")
+	existing_terraform_ids, err := ExtractTerraformStateIDs(
+		filepath.Join(".", "terraform.tfstate"),
+		"",
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,7 +37,6 @@ func main() {
 	allCorpRules, _ := sc.GetAllCorpRules(corp)
 	set_import_corp_rule_resources(allCorpRules, existing_terraform_ids)
 
-	// os.Exit(0)
 	allCorpLists, _ := sc.GetAllCorpLists(corp)
 	set_import_corp_list_resources(allCorpLists, existing_terraform_ids)
 
@@ -615,35 +611,23 @@ type StateIDExtractor struct {
 	state     *TerraformState
 }
 
-func NewStateIDExtractor(statePath string) *StateIDExtractor {
-	return &StateIDExtractor{
-		statePath: statePath,
-	}
-}
-
-func (se *StateIDExtractor) ReadStateFile() error {
-	content, err := os.ReadFile(se.statePath)
+// ExtractTerraformStateIDs consolidates file reading and ID extraction into a single function
+func ExtractTerraformStateIDs(statePath string, resourceType string) ([]string, error) {
+	// Read the file contents
+	content, err := os.ReadFile(statePath)
 	if err != nil {
-		return fmt.Errorf("error reading state file: %v", err)
+		return nil, fmt.Errorf("error reading state file: %v", err)
 	}
 
+	// Parse the state file
 	var state TerraformState
 	if err := json.Unmarshal(content, &state); err != nil {
-		return fmt.Errorf("error parsing state file: %v", err)
+		return nil, fmt.Errorf("error parsing state file: %v", err)
 	}
 
-	se.state = &state
-	return nil
-}
-
-func (se *StateIDExtractor) ExtractIDs(resourceType string) ([]string, error) {
-	if se.state == nil {
-		return nil, fmt.Errorf("state file not read")
-	}
-
+	// Extract IDs
 	var ids []string
-
-	for _, resource := range se.state.Resources {
+	for _, resource := range state.Resources {
 		if resourceType == "" || resource.Type == resourceType {
 			for _, instance := range resource.Instances {
 				if id, ok := instance.Attributes["id"].(string); ok && id != "" {
@@ -654,7 +638,7 @@ func (se *StateIDExtractor) ExtractIDs(resourceType string) ([]string, error) {
 	}
 
 	if len(ids) == 0 {
-		return []string{""}, fmt.Errorf("no IDs found")
+		return nil, fmt.Errorf("no IDs found")
 	}
 
 	return ids, nil
