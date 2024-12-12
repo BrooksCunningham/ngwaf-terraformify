@@ -36,10 +36,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// for _, id := range existing_terraform_ids {
-	// 	fmt.Println(id)
-	// }
-
 	// Corp imports
 	allCorpRules, _ := sc.GetAllCorpRules(corp)
 	set_import_corp_rule_resources(allCorpRules, existing_terraform_ids)
