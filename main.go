@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,39 +25,55 @@ func main() {
 
 	corp := os.Getenv("TF_VAR_NGWAF_CORP")
 
+	extractor := NewStateIDExtractor(filepath.Join(".", "terraform.tfstate"))
+
+	if err := extractor.ReadStateFile(); err != nil {
+		log.Fatal(err)
+	}
+
+	existing_terraform_ids, err := extractor.ExtractIDs("")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// for _, id := range existing_terraform_ids {
+	// 	fmt.Println(id)
+	// }
+
 	// Corp imports
 	allCorpRules, _ := sc.GetAllCorpRules(corp)
-	set_import_corp_rule_resources(allCorpRules)
+	set_import_corp_rule_resources(allCorpRules, existing_terraform_ids)
 
+	// os.Exit(0)
 	allCorpLists, _ := sc.GetAllCorpLists(corp)
-	set_import_corp_list_resources(allCorpLists)
+	set_import_corp_list_resources(allCorpLists, existing_terraform_ids)
 
 	allCorpSignals, _ := sc.GetAllCorpSignalTags(corp)
-	set_import_corp_signals_resources(allCorpSignals)
+	set_import_corp_signals_resources(allCorpSignals, existing_terraform_ids)
 
 	allSiteNames, _ := sc.ListSites(corp)
-	set_import_sites_resources(allSiteNames)
+	set_import_sites_resources(allSiteNames, existing_terraform_ids)
 
 	// Site imports
 	for _, ngwafSite := range allSiteNames {
 		// Site rules
 		allSiteRules, _ := sc.GetAllSiteRules(corp, ngwafSite.Name)
-		set_import_site_rule_resources(ngwafSite.Name, allSiteRules)
+		set_import_site_rule_resources(ngwafSite.Name, allSiteRules, existing_terraform_ids)
 
 		// Site Legacy Templated Rules
 		allLegacyTemplatedRules := get_active_legacy_templated_rules(sc, corp, ngwafSite.Name, email, token)
-		set_import_site_legacy_templated_rule_resources(ngwafSite.Name, allLegacyTemplatedRules)
+		set_import_site_legacy_templated_rule_resources(ngwafSite.Name, allLegacyTemplatedRules, existing_terraform_ids)
 
 		// Site tags
 		allSiteSignals, _ := sc.GetAllSiteSignalTags(corp, ngwafSite.Name)
-		set_import_site_signals_resources(ngwafSite.Name, allSiteSignals)
+		set_import_site_signals_resources(ngwafSite.Name, allSiteSignals, existing_terraform_ids)
 
 		// Site lists
 		allSiteLists, _ := sc.GetAllSiteLists(corp, ngwafSite.Name)
-		set_import_site_list_resources(ngwafSite.Name, allSiteLists)
+		set_import_site_list_resources(ngwafSite.Name, allSiteLists, existing_terraform_ids)
 
 		allSiteIntegrations, _ := sc.ListIntegrations(corp, ngwafSite.Name)
-		set_import_site_integration_resources(ngwafSite.Name, allSiteIntegrations)
+		set_import_site_integration_resources(ngwafSite.Name, allSiteIntegrations, existing_terraform_ids)
 
 		// Site alerts and Agent alerts
 		allSiteAlerts, _ := sc.ListCustomAlerts(corp, ngwafSite.Name)
@@ -71,27 +90,30 @@ func main() {
 		}
 
 		// Site agent alerts and Site alerts
-		set_import_site_agent_alerts_resources(ngwafSite.Name, agentAlerts)
-		set_import_site_alerts_resources(ngwafSite.Name, infoAlerts)
+		set_import_site_agent_alerts_resources(ngwafSite.Name, agentAlerts, existing_terraform_ids)
+		set_import_site_alerts_resources(ngwafSite.Name, infoAlerts, existing_terraform_ids)
 	}
 
 	fmt.Println("done")
 
 }
 
-func set_import_corp_rule_resources(allCorpRules sigsci.ResponseCorpRuleBodyList) []string {
+func set_import_corp_rule_resources(allCorpRules sigsci.ResponseCorpRuleBodyList, existing_terraform_ids []string) []string {
 	var sigsciCorpIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
-	for _, corpRule := range allCorpRules.Data {
-		sigsciCorpIdNoNnumbers := sanitizeTfId(corpRule.ID)
-		if corpRule.Type == "request" {
+	for _, corp_rule := range allCorpRules.Data {
+		if slices.Contains(existing_terraform_ids, corp_rule.ID) {
+			continue
+		}
+		sigsciCorpIdNoNnumbers := sanitizeTfId(corp_rule.ID)
+		if corp_rule.Type == "request" {
 			// Create a new block (e.g., a resource block)
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
-			block.Body().SetAttributeValue("id", cty.StringVal(corpRule.ID))
+			block.Body().SetAttributeValue("id", cty.StringVal(corp_rule.ID))
 			tokens := hclwrite.Tokens{
 				{
 					Type:  hclsyntax.TokenIdent,
@@ -109,13 +131,16 @@ func set_import_corp_rule_resources(allCorpRules sigsci.ResponseCorpRuleBodyList
 }
 
 // Corp lists
-func set_import_corp_list_resources(list sigsci.ResponseListBodyList) []string {
+func set_import_corp_list_resources(list sigsci.ResponseListBodyList, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list.Data {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
 		// if item.Type == "request" {
 		// Create a new block (e.g., a resource block)
@@ -143,13 +168,16 @@ func set_import_corp_list_resources(list sigsci.ResponseListBodyList) []string {
 }
 
 // Corp Signals
-func set_import_corp_signals_resources(allCorpList sigsci.ResponseSignalTagBodyList) []string {
+func set_import_corp_signals_resources(allCorpList sigsci.ResponseSignalTagBodyList, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range allCorpList.Data {
+		if slices.Contains(existing_terraform_ids, item.TagName) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.TagName)
 		block := file.Body().AppendNewBlock("import", nil)
 		// Set attributes for the block
@@ -170,13 +198,16 @@ func set_import_corp_signals_resources(allCorpList sigsci.ResponseSignalTagBodyL
 }
 
 // Sites
-func set_import_sites_resources(allCorpList []sigsci.Site) []string {
+func set_import_sites_resources(allCorpList []sigsci.Site, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range allCorpList {
+		if slices.Contains(existing_terraform_ids, item.Name) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.Name)
 		block := file.Body().AppendNewBlock("import", nil)
 		// Set attributes for the block
@@ -198,13 +229,16 @@ func set_import_sites_resources(allCorpList []sigsci.Site) []string {
 }
 
 // Site lists
-func set_import_site_list_resources(ngwafSiteShortName string, list sigsci.ResponseListBodyList) []string {
+func set_import_site_list_resources(ngwafSiteShortName string, list sigsci.ResponseListBodyList, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list.Data {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
 		// Create a new block (e.g., a resource block)
 		block := file.Body().AppendNewBlock("import", nil)
@@ -226,13 +260,16 @@ func set_import_site_list_resources(ngwafSiteShortName string, list sigsci.Respo
 }
 
 // Site alerts
-func set_import_site_integration_resources(ngwafSiteShortName string, list []sigsci.Integration) []string {
+func set_import_site_integration_resources(ngwafSiteShortName string, list []sigsci.Integration, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
 		// Create a new block (e.g., a resource block)
 		block := file.Body().AppendNewBlock("import", nil)
@@ -254,13 +291,16 @@ func set_import_site_integration_resources(ngwafSiteShortName string, list []sig
 }
 
 // Site alerts
-func set_import_site_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert) []string {
+func set_import_site_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
 		// Create a new block (e.g., a resource block)
 		block := file.Body().AppendNewBlock("import", nil)
@@ -282,13 +322,16 @@ func set_import_site_alerts_resources(ngwafSiteShortName string, list []sigsci.C
 }
 
 // Site agent alerts
-func set_import_site_agent_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert) []string {
+func set_import_site_agent_alerts_resources(ngwafSiteShortName string, list []sigsci.CustomAlert, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
 		// Create a new block (e.g., a resource block)
 		block := file.Body().AppendNewBlock("import", nil)
@@ -309,13 +352,16 @@ func set_import_site_agent_alerts_resources(ngwafSiteShortName string, list []si
 	return sigsciIdNoNnumbersArray
 }
 
-func set_import_site_signals_resources(ngwafSiteShortName string, list sigsci.ResponseSignalTagBodyList) []string {
+func set_import_site_signals_resources(ngwafSiteShortName string, list sigsci.ResponseSignalTagBodyList, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list.Data {
+		if slices.Contains(existing_terraform_ids, item.TagName) {
+			continue
+		}
 		sigsciIdNoNnumbers := sanitizeTfId(item.TagName)
 		block := file.Body().AppendNewBlock("import", nil)
 		// Set attributes for the block
@@ -337,21 +383,24 @@ func set_import_site_signals_resources(ngwafSiteShortName string, list sigsci.Re
 	return sigsciIdNoNnumbersArray
 }
 
-func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigsci.ResponseSiteRuleBodyList) []string {
+func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigsci.ResponseSiteRuleBodyList, existing_terraform_ids []string) []string {
 	var sigsciSiteIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
-	for _, siteRule := range allSiteRules.Data {
-		sigsciSiteIdNoNnumbers := sanitizeTfId(siteRule.ID)
+	for _, item := range allSiteRules.Data {
+		if slices.Contains(existing_terraform_ids, item.ID) {
+			continue
+		}
+		sigsciSiteIdNoNnumbers := sanitizeTfId(item.ID)
 
-		switch siteRule.Type {
+		switch item.Type {
 		case "request":
 			// Create a new block (e.g., a resource block)
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
-			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, siteRule.ID)))
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
 			tokens := hclwrite.Tokens{
 				{
 					Type:  hclsyntax.TokenIdent,
@@ -365,7 +414,7 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 			// Create a new block (e.g., a resource block)
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
-			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, siteRule.ID)))
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
 			tokens := hclwrite.Tokens{
 				{
 					Type:  hclsyntax.TokenIdent,
@@ -379,7 +428,7 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 			// Create a new block (e.g., a resource block)
 			block := file.Body().AppendNewBlock("import", nil)
 			// Set attributes for the block
-			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, siteRule.ID)))
+			block.Body().SetAttributeValue("id", cty.StringVal(fmt.Sprintf(`%s:%s`, ngwafSiteShortName, item.ID)))
 			tokens := hclwrite.Tokens{
 				{
 					Type:  hclsyntax.TokenIdent,
@@ -396,13 +445,16 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 	return sigsciSiteIdNoNnumbersArray
 }
 
-func set_import_site_legacy_templated_rule_resources(ngwafSiteShortName string, list ResponseSiteLegacyTemplatedRuleBodyList) []string {
+func set_import_site_legacy_templated_rule_resources(ngwafSiteShortName string, list ResponseSiteLegacyTemplatedRuleBodyList, existing_terraform_ids []string) []string {
 	var sigsciIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
 	for _, item := range list.Data {
+		if slices.Contains(existing_terraform_ids, item.Name) {
+			continue
+		}
 		if len(item.Detections) > 0 {
 			sigsciIdNoNnumbers := sanitizeTfId(item.Name)
 			// Create a new block (e.g., a resource block)
@@ -534,4 +586,80 @@ type Detection struct {
 	Fields    []Field `json:"fields"`
 	Created   string  `json:"created"`
 	CreatedBy string  `json:"createdBy"`
+}
+
+// TerraformState represents the complete structure of a Terraform state file
+type TerraformState struct {
+	Version          int             `json:"version"`
+	TerraformVersion string          `json:"terraform_version"`
+	Serial           int             `json:"serial"`
+	Lineage          string          `json:"lineage"`
+	Resources        []ResourceState `json:"resources"`
+}
+
+// ResourceState represents a single resource in the Terraform state
+type ResourceState struct {
+	Type      string          `json:"type"`
+	Name      string          `json:"name"`
+	Provider  string          `json:"provider"`
+	Instances []InstanceState `json:"instances"`
+}
+
+// InstanceState represents an instance of a resource
+type InstanceState struct {
+	SchemaVersion  int                    `json:"schema_version"`
+	Attributes     map[string]interface{} `json:"attributes"`
+	SensitiveAttrs []interface{}          `json:"sensitive_attributes,omitempty"`
+	Private        string                 `json:"private,omitempty"`
+}
+
+// StateIDExtractor handles extraction of resource IDs from Terraform state
+type StateIDExtractor struct {
+	statePath string
+	state     *TerraformState
+}
+
+func NewStateIDExtractor(statePath string) *StateIDExtractor {
+	return &StateIDExtractor{
+		statePath: statePath,
+	}
+}
+
+func (se *StateIDExtractor) ReadStateFile() error {
+	content, err := os.ReadFile(se.statePath)
+	if err != nil {
+		return fmt.Errorf("error reading state file: %v", err)
+	}
+
+	var state TerraformState
+	if err := json.Unmarshal(content, &state); err != nil {
+		return fmt.Errorf("error parsing state file: %v", err)
+	}
+
+	se.state = &state
+	return nil
+}
+
+func (se *StateIDExtractor) ExtractIDs(resourceType string) ([]string, error) {
+	if se.state == nil {
+		return nil, fmt.Errorf("state file not read")
+	}
+
+	var ids []string
+
+	for _, resource := range se.state.Resources {
+		if resourceType == "" || resource.Type == resourceType {
+			for _, instance := range resource.Instances {
+				if id, ok := instance.Attributes["id"].(string); ok && id != "" {
+					ids = append(ids, id)
+				}
+			}
+		}
+	}
+
+	if len(ids) == 0 {
+		return []string{""}, fmt.Errorf("no IDs found")
+	}
+
+	return ids, nil
 }
