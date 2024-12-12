@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ func main() {
 		"",
 	)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 
 	// Corp imports
@@ -606,40 +605,43 @@ type InstanceState struct {
 }
 
 // StateIDExtractor handles extraction of resource IDs from Terraform state
-type StateIDExtractor struct {
-	statePath string
-	state     *TerraformState
-}
+// type StateIDExtractor struct {
+// 	statePath string
+// 	state     *TerraformState
+// }
 
 // ExtractTerraformStateIDs consolidates file reading and ID extraction into a single function
 func ExtractTerraformStateIDs(statePath string, resourceType string) ([]string, error) {
-	// Read the file contents
-	content, err := os.ReadFile(statePath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading state file: %v", err)
-	}
+	if _, err := os.Stat(statePath); err == nil {
+		// Read the file contents
+		content, err := os.ReadFile(statePath)
+		if err != nil {
+			return nil, fmt.Errorf("error reading state file: %v", err)
+		}
 
-	// Parse the state file
-	var state TerraformState
-	if err := json.Unmarshal(content, &state); err != nil {
-		return nil, fmt.Errorf("error parsing state file: %v", err)
-	}
+		// Parse the state file
+		var state TerraformState
+		if err := json.Unmarshal(content, &state); err != nil {
+			return nil, fmt.Errorf("error parsing state file: %v", err)
+		}
 
-	// Extract IDs
-	var ids []string
-	for _, resource := range state.Resources {
-		if resourceType == "" || resource.Type == resourceType {
-			for _, instance := range resource.Instances {
-				if id, ok := instance.Attributes["id"].(string); ok && id != "" {
-					ids = append(ids, id)
+		// Extract IDs
+		var ids []string
+		for _, resource := range state.Resources {
+			if resourceType == "" || resource.Type == resourceType {
+				for _, instance := range resource.Instances {
+					if id, ok := instance.Attributes["id"].(string); ok && id != "" {
+						ids = append(ids, id)
+					}
 				}
 			}
 		}
-	}
 
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("no IDs found")
-	}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("no IDs found")
+		}
 
-	return ids, nil
+		return ids, nil
+	}
+	return nil, fmt.Errorf("no terraform.tfstate file found")
 }
