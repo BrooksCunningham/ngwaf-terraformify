@@ -2,6 +2,11 @@
 
 This tool imports your NGWAF settings to the Terraform state and generates the Terraform configuration for your NGWAF config in HCL.
 
+# TODO
+Fix bug! Need to account for the case where the Terraform state is stored
+remotely. Run a command like the following to generate the state file.
+`terraform state pull > terraform.tfstate`
+
 ## Feature list and status
 - [x] Corp Rules                
 - [x] Corp Lists                
