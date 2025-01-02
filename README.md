@@ -19,7 +19,7 @@ remotely. Run a command like the following to generate the state file.
 - [x] Site Alerts               
 - [x] Site Agent Alerts         
 - [x] Site Integrations
-- [ ] Header Link
+- [x] Header Link
 - [ ] Edge integration
 - [ ] Space lasers
 - [ ] Coffee maker
