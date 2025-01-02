@@ -52,7 +52,7 @@ func main() {
 		set_import_site_rule_resources(ngwafSite.Name, allSiteRules, existing_terraform_ids)
 
 		// Site Legacy Templated Rules
-		allLegacyTemplatedRules := get_active_legacy_templated_rules(sc, corp, ngwafSite.Name, email, token)
+		allLegacyTemplatedRules := get_active_legacy_templated_rules(corp, ngwafSite.Name, email, token)
 		set_import_site_legacy_templated_rule_resources(ngwafSite.Name, allLegacyTemplatedRules, existing_terraform_ids)
 
 		// Site tags
@@ -505,7 +505,7 @@ func write_terraform_config_to_file(hclFile *hclwrite.File, fileName string) boo
 	return true
 }
 
-func get_active_legacy_templated_rules(sc sigsci.Client, corpName string, siteName string, email string, token string) ResponseSiteLegacyTemplatedRuleBodyList {
+func get_active_legacy_templated_rules(corpName string, siteName string, email string, token string) ResponseSiteLegacyTemplatedRuleBodyList {
 	// Data structure for JSON input
 
 	resp, _ := doRequestDetailed("GET", fmt.Sprintf("/v0/corps/%s/sites/%s/configuredtemplates", corpName, siteName), "", email, token)
