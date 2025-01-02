@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	sigsci "github.com/signalsciences/go-sigsci"
@@ -66,6 +67,10 @@ func main() {
 		allSiteIntegrations, _ := sc.ListIntegrations(corp, ngwafSite.Name)
 		set_import_site_integration_resources(ngwafSite.Name, allSiteIntegrations, existing_terraform_ids)
 
+		// Header link integrations
+		allSiteHeaderLinks, _ := sc.ListHeaderLinks(corp, ngwafSite.Name)
+		set_import_site_header_link_resources(ngwafSite.Name, allSiteHeaderLinks, existing_terraform_ids)
+
 		// Site alerts and Agent alerts
 		allSiteAlerts, _ := sc.ListCustomAlerts(corp, ngwafSite.Name)
 
@@ -83,6 +88,7 @@ func main() {
 		// Site agent alerts and Site alerts
 		set_import_site_agent_alerts_resources(ngwafSite.Name, agentAlerts, existing_terraform_ids)
 		set_import_site_alerts_resources(ngwafSite.Name, infoAlerts, existing_terraform_ids)
+
 	}
 
 	fmt.Println("done")
@@ -374,13 +380,13 @@ func set_import_site_signals_resources(ngwafSiteShortName string, list sigsci.Re
 	return sigsciIdNoNnumbersArray
 }
 
-func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigsci.ResponseSiteRuleBodyList, existing_terraform_ids []string) []string {
+func set_import_site_rule_resources(ngwafSiteShortName string, list sigsci.ResponseSiteRuleBodyList, existing_terraform_ids []string) []string {
 	var sigsciSiteIdNoNnumbersArray []string
 
 	// Create a new empty HCL file
 	file := hclwrite.NewEmptyFile()
 
-	for _, item := range allSiteRules.Data {
+	for _, item := range list.Data {
 		if slices.Contains(existing_terraform_ids, item.ID) {
 			continue
 		}
@@ -434,6 +440,48 @@ func set_import_site_rule_resources(ngwafSiteShortName string, allSiteRules sigs
 	write_terraform_config_to_file(file, "import.tf")
 
 	return sigsciSiteIdNoNnumbersArray
+}
+
+func set_import_site_header_link_resources(
+	ngwafSiteShortName string,
+	list []sigsci.HeaderLink,
+	existingTerraformIDs []string,
+) []string {
+	var resultIDs []string
+
+	// Create a new empty HCL file
+	file := hclwrite.NewEmptyFile()
+
+	for _, item := range list {
+		if slices.Contains(existingTerraformIDs, item.ID) {
+			continue
+		}
+
+		// Convert the tag name to something valid as a TF resource name
+		sigsciIdNoNnumbers := sanitizeTfId(item.ID)
+
+		// Create a new 'import' block
+		block := file.Body().AppendNewBlock("import", nil)
+		block.Body().SetAttributeValue("id", cty.StringVal(
+			fmt.Sprintf("%s:%s", ngwafSiteShortName, item.ID),
+		))
+
+		// Create a traversal to reference the resource in Terraform
+		traversal := hcl.Traversal{
+			hcl.TraverseRoot{Name: "sigsci_site_header_link"},
+			hcl.TraverseAttr{Name: fmt.Sprintf("%s%s", ngwafSiteShortName, sigsciIdNoNnumbers)},
+		}
+		// Use SetAttributeTraversal to set the 'to' attribute
+		block.Body().SetAttributeTraversal("to", traversal)
+
+		// Collect our sanitized IDs
+		resultIDs = append(resultIDs, sigsciIdNoNnumbers)
+	}
+
+	// Write the file to disk
+	write_terraform_config_to_file(file, "import.tf")
+
+	return resultIDs
 }
 
 func set_import_site_legacy_templated_rule_resources(ngwafSiteShortName string, list ResponseSiteLegacyTemplatedRuleBodyList, existing_terraform_ids []string) []string {
@@ -603,12 +651,6 @@ type InstanceState struct {
 	SensitiveAttrs []interface{}          `json:"sensitive_attributes,omitempty"`
 	Private        string                 `json:"private,omitempty"`
 }
-
-// StateIDExtractor handles extraction of resource IDs from Terraform state
-// type StateIDExtractor struct {
-// 	statePath string
-// 	state     *TerraformState
-// }
 
 // ExtractTerraformStateIDs consolidates file reading and ID extraction into a single function
 func ExtractTerraformStateIDs(statePath string, resourceType string) ([]string, error) {
